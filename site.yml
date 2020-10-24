@@ -1,8 +1,51 @@
 ---
-
 - hosts: k3s_cluster
   gather_facts: yes
   become: yes
+  vars:
+    log2ram_version: master
+    log2ram_size: 128M
+  pre_tasks:
+
+    - include: pre.yml
+      tags:
+        - pre
+
+    # Allowed to fail inorder to be idempotent
+    - name: Stop log2ram service
+      systemd:
+        name: log2ram
+        state: stopped
+      ignore_errors: true
+
+    - name: Cloning log2ram from GitHub
+      git:
+        repo: https://github.com/azlux/log2ram.git
+        dest: /opt/log2ram
+        version: "{{ log2ram_version }}"
+
+    - name: Changing perms of "/opt/log2ram/install.sh"
+      file:
+        dest: /opt/log2ram/install.sh
+        mode: a+x
+
+    - name: Install log2ram
+      command: /bin/sh ./install.sh
+      args:
+        chdir: "/opt/log2ram"
+      register: log2ram
+      changed_when: '"Reboot to activate log2ram" in log2ram.stdout'
+
+    - name: Copy log2ram.conf
+      template:
+        src: log2ram.conf.j2
+        dest: /etc/log2ram.conf
+
+    - name: create static route
+      copy:
+        dest: "/lib/dhcpcd/dhcpcd-hooks/40-route"
+        content: "ip route add 0.0.0.0/0 via {{ raspbian_gateway }}"
+      become: yes
   roles:
     - role: prereq
     - role: download
