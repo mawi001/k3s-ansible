@@ -1,0 +1,87 @@
+---
+- hosts: all
+  gather_facts: false
+  become: yes
+  vars:
+    force_fs_create: no
+  tasks:
+    - name: Create a new primary partition
+      parted:
+        device: /dev/sda
+        number: 1
+        state: present
+
+    - name: Create a ext4 filesystem on /dev/sda1
+      filesystem:
+        fstype: ext4
+        dev: /dev/sda1
+        force: "{{ force_fs_create }}"
+
+    - name: create mountpoint
+      file:
+        path: /media/usb
+        state: directory
+        owner: pi
+        group: pi
+      tags: mount
+
+    - name: mount usb
+      mount:
+        src: /dev/sda1
+        path: /media/usb
+        fstype: ext4
+        state: mounted
+      tags:
+        - mount
+
+- hosts: master
+  become: yes
+  tasks:
+    - name: install nfs
+      apt:
+        name: nfs-kernel-server
+        state: present
+
+    - name: set nfs exports
+      copy:
+        dest: /etc/exports
+        content: |
+          /media/usb 10.0.0.0/8(rw,sync,no_subtree_check,no_root_squash)
+      notify:
+        - reload nfs
+
+    - name: rm /lib/systemd/system/nfs-common.service
+      shell: >
+        rm /lib/systemd/system/nfs-common.service || true &&
+        systemctl daemon-reload
+
+    - name: ensure nfs service
+      service:
+        name: nfs-common
+        enabled: yes
+        state: started
+
+
+  handlers:
+    - name: reload nfs
+      shell: >
+        exportfs -rva
+
+- hosts: node
+  become: yes
+  tasks:
+    - name: install nfs client
+      apt:
+        name: nfs-common
+        state: present
+
+    - name: rm /lib/systemd/system/nfs-common.service
+      shell: >
+        rm /lib/systemd/system/nfs-common.service || true &&
+        systemctl daemon-reload
+
+    - name: ensure nfs service
+      service:
+        name: nfs-common
+        enabled: yes
+        state: started
