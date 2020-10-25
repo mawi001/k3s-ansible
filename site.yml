@@ -6,7 +6,6 @@
     log2ram_version: master
     log2ram_size: 128M
   pre_tasks:
-
     - include: pre.yml
       tags:
         - pre
